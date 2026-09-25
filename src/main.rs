@@ -1,5 +1,6 @@
 use axum::{Json, Router, routing::get};
 use serde::{Deserialize, Serialize};
+use sqlx::sqlite::SqlitePool;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Task {
@@ -11,6 +12,22 @@ pub struct Task {
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
+
+    let database_url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL debe estar definida en .env");
+
+    let pool = SqlitePool::connect(&database_url)
+        .await
+        .expect("No se pudo conectar a la base de datos");
+
+    sqlx::migrate!()
+        .run(&pool)
+        .await
+        .expect("No se pudieron ejecutar las migraciones");
+
+    println!("Conectado a la base de datos y migraciones al día");
+
     let app = Router::new()
         .route("/", get(root))
         .route("/tasks/demo", get(demo_task));

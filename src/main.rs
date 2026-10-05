@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 
@@ -39,6 +39,7 @@ async fn main() {
         .route("/", get(root))
         .route("/tasks/demo", get(demo_task))
         .route("/healt", get(health_check))
+        .route("/tasks", get(list_tasks))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -63,8 +64,17 @@ async fn demo_task() -> Json<Task> {
 
 async fn health_check(State(state): State<AppState>) -> &'static str {
     sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM tasks")
-    .fetch_one(&state.pool)
-    .await
-    .expect("la consulta de salud fallo");
+        .fetch_one(&state.pool)
+        .await
+        .expect("la consulta de salud fallo");
     "OK"
+}
+
+async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<Task>>, StatusCode> {
+    let tasks = sqlx::query_as!(Task, "SELECT id, title, description, completed FROM tasks")
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(tasks))
 }

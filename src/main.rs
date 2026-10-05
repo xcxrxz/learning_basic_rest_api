@@ -1,4 +1,4 @@
-use axum::{Json, Router, routing::get};
+use axum::{Json, Router, extract::State, routing::get};
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 
@@ -8,6 +8,11 @@ pub struct Task {
     pub title: String,
     pub description: Option<String>,
     pub completed: bool,
+}
+
+#[derive(Clone)]
+struct AppState {
+    pool: SqlitePool,
 }
 
 #[tokio::main]
@@ -28,9 +33,13 @@ async fn main() {
 
     println!("Conectado a la base de datos y migraciones al día");
 
+    let state = AppState { pool };
+
     let app = Router::new()
         .route("/", get(root))
-        .route("/tasks/demo", get(demo_task));
+        .route("/tasks/demo", get(demo_task))
+        .route("/healt", get(health_check))
+        .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
@@ -50,4 +59,12 @@ async fn demo_task() -> Json<Task> {
         description: Some("Terminar el tutorial de API REST".to_string()),
         completed: false,
     })
+}
+
+async fn health_check(State(state): State<AppState>) -> &'static str {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM tasks")
+    .fetch_one(&state.pool)
+    .await
+    .expect("la consulta de salud fallo");
+    "OK"
 }

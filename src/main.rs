@@ -1,4 +1,9 @@
-use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    routing::get,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 
@@ -37,9 +42,9 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
-        .route("/tasks/demo", get(demo_task))
         .route("/healt", get(health_check))
         .route("/tasks", get(list_tasks))
+        .route("/tasks/{id}", get(get_task))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -51,15 +56,6 @@ async fn main() {
 
 async fn root() -> &'static str {
     "Hello, world!"
-}
-
-async fn demo_task() -> Json<Task> {
-    Json(Task {
-        id: 1,
-        title: "Aprender Rust".to_string(),
-        description: Some("Terminar el tutorial de API REST".to_string()),
-        completed: false,
-    })
 }
 
 async fn health_check(State(state): State<AppState>) -> &'static str {
@@ -77,4 +73,21 @@ async fn list_tasks(State(state): State<AppState>) -> Result<Json<Vec<Task>>, St
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(tasks))
+}
+
+async fn get_task(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<Task>, StatusCode> {
+    let task = sqlx::query_as!(
+        Task,
+        "SELECT id, title, description, completed FROM tasks WHERE id = ?",
+        id
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(task))
 }

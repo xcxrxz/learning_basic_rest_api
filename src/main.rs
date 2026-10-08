@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
@@ -18,6 +18,12 @@ pub struct Task {
 #[derive(Clone)]
 struct AppState {
     pool: SqlitePool,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateTask {
+    title: String,
+    description: Option<String>,
 }
 
 #[tokio::main]
@@ -43,7 +49,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(root))
         .route("/healt", get(health_check))
-        .route("/tasks", get(list_tasks))
+        .route("/tasks", get(list_tasks).post(create_task))
         .route("/tasks/{id}", get(get_task))
         .with_state(state);
 
@@ -90,4 +96,20 @@ async fn get_task(
     .ok_or(StatusCode::NOT_FOUND)?;
 
     Ok(Json(task))
+}
+
+async fn create_task(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateTask>,
+    ) -> Result<(StatusCode, Json<Task>), StatusCode> {
+    let task = sqlx::query_as!(
+        Task,
+        "INSERT INTO tasks (title, description) VALUES (?, ?) RETURNING id, title, description, completed",
+        payload.title,
+        payload.description
+        ).fetch_one(&state.pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        Ok((StatusCode::CREATED, Json(task)))
 }

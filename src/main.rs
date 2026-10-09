@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
@@ -24,6 +24,13 @@ struct AppState {
 struct CreateTask {
     title: String,
     description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateTask {
+    title: String,
+    description: Option<String>,
+    completed: bool,
 }
 
 #[tokio::main]
@@ -50,7 +57,7 @@ async fn main() {
         .route("/", get(root))
         .route("/healt", get(health_check))
         .route("/tasks", get(list_tasks).post(create_task))
-        .route("/tasks/{id}", get(get_task))
+        .route("/tasks/{id}", get(get_task).put(update_task))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -101,7 +108,7 @@ async fn get_task(
 async fn create_task(
     State(state): State<AppState>,
     Json(payload): Json<CreateTask>,
-    ) -> Result<(StatusCode, Json<Task>), StatusCode> {
+) -> Result<(StatusCode, Json<Task>), StatusCode> {
     let task = sqlx::query_as!(
         Task,
         "INSERT INTO tasks (title, description) VALUES (?, ?) RETURNING id, title, description, completed",
@@ -111,5 +118,26 @@ async fn create_task(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        Ok((StatusCode::CREATED, Json(task)))
+    Ok((StatusCode::CREATED, Json(task)))
+}
+
+async fn update_task(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(payload): Json<UpdateTask>,
+) -> Result<Json<Task>, StatusCode> {
+    let task = sqlx::query_as!(
+        Task,
+        "UPDATE tasks SET title = ?, description = ?, completed = ? WHERE id = ? RETURNING id, title, description, completed",
+        payload.title,
+        payload.description,
+        payload.completed,
+        id,
+        )
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(task))
 }

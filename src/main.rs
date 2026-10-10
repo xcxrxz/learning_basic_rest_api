@@ -1,8 +1,8 @@
 use axum::{
-    Json, Router,
     extract::{Path, State},
-    http::StatusCode,
-    routing::{get, post, put},
+    http::{StatusCode},
+    routing::{get, post, put, delete},
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
@@ -57,7 +57,7 @@ async fn main() {
         .route("/", get(root))
         .route("/healt", get(health_check))
         .route("/tasks", get(list_tasks).post(create_task))
-        .route("/tasks/{id}", get(get_task).put(update_task))
+        .route("/tasks/{id}", get(get_task).put(update_task).delete(delete_task))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -140,4 +140,20 @@ async fn update_task(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     Ok(Json(task))
+}
+
+async fn delete_task(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, StatusCode> {
+    let result = sqlx::query!("DELETE FROM tasks WHERE id = ?", id)
+        .execute(&state.pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if result.rows_affected() == 0 {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }
